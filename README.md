@@ -56,8 +56,8 @@ Medicine_Shop_Project/
 4. Set your MySQL credentials in `config/db.php`. The file currently uses:
    - host `localhost`
    - port `3306`
-   - user `phpuser`
-   - password `root123`
+   - user `yourusername`
+   - password `youruserpassword`
    - database `medicine_shop`
 
    Change these to match your server (XAMPP's usual default is user `root`
