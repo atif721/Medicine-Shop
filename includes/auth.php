@@ -1,12 +1,11 @@
 <?php
-/**
- * Session guard. Include this at the top of every protected page.
- */
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
-require_once __DIR__ . '/functions.php';
+$base = file_exists("config/db.php") ? "" : "../";
 
-if (empty($_SESSION['admin_id'])) {
-    $_SESSION['flash']['error'] = 'Please log in to continue.';
-    header('Location: ' . BASE_URL . '/auth/login.php');
-    exit;
+if (!isset($_SESSION["admin_id"])) {
+    header("location: " . $base . "auth/login.php");
+    exit();
 }

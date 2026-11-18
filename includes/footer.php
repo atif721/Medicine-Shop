@@ -1,11 +1,13 @@
-        </main>
+<?php $base = file_exists("config/db.php") ? "" : "../"; ?>
+</main>
 </div>
 
 <footer class="app-footer text-center text-muted py-3">
-    <small>&copy; <?= date('Y') ?> <?= e(APP_NAME) ?></small>
+    <small>&copy; <?php echo date("Y"); ?> Medicine Shop Billing System</small>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="<?= url('assets/js/app.js') ?>"></script>
+<script src="<?php echo $base; ?>assets/js/app.js"></script>
 </body>
+
 </html>
