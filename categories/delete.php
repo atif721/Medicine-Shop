@@ -1,35 +1,24 @@
 <?php
-/**
- * Delete a category. Only POST requests are accepted.
- */
+session_start();
+include "../config/db.php";
+include "../includes/auth.php";
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/auth.php';
+$id = $_GET["id"];
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('categories/index.php');
+$check = mysqli_query($conn, "SELECT * FROM products WHERE category_id='$id'");
+if (mysqli_num_rows($check) > 0) {
+    $_SESSION["error"] = "Cannot delete category because products exist in it.";
+    header("location: index.php");
+    exit();
 }
 
-$id       = (int) ($_POST['id'] ?? 0);
-$category = get_category($conn, $id);
+$sql = "DELETE FROM categories WHERE id='$id'";
+$result = mysqli_query($conn, $sql);
 
-if (!$category) {
-    set_flash('error', 'Category not found.');
-    redirect('categories/index.php');
-}
-
-$count_result = mysqli_query($conn, "SELECT COUNT(*) AS total FROM products WHERE category_id = $id");
-$count        = $count_result ? (int) mysqli_fetch_assoc($count_result)['total'] : 0;
-
-if ($count > 0) {
-    set_flash('error', 'This category cannot be deleted because ' . $count . ' product(s) use it.');
-    redirect('categories/index.php');
-}
-
-if (mysqli_query($conn, "DELETE FROM categories WHERE id = $id")) {
-    set_flash('success', 'Category "' . $category['name'] . '" deleted successfully.');
+if ($result) {
+    $_SESSION["message"] = "Category deleted successfully!";
+    header("location: index.php");
 } else {
-    set_flash('error', 'The category could not be deleted.');
+    die("Deletion failed: " . mysqli_error($conn));
 }
-
-redirect('categories/index.php');
+?>

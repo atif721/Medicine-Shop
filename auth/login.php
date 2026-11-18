@@ -1,53 +1,40 @@
 <?php
-/**
- * Admin login.
- */
+session_start();
+include "../config/db.php";
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/functions.php';
-
-if (!empty($_SESSION['admin_id'])) {
-    redirect('index.php');
+if (isset($_SESSION["admin_id"])) {
+    header("location: ../index.php");
+    exit();
 }
 
-$error    = '';
-$username = '';
+if (isset($_POST["login"])) {
+    $username = $_POST["username"];
+    $password = $_POST["password"];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-
-    if ($username === '' || $password === '') {
-        $error = 'Please enter both username and password.';
-    } else {
-        $username_escaped = mysqli_real_escape_string($conn, $username);
-
-        $result = mysqli_query(
-            $conn,
-            "SELECT id, username, password, full_name
-             FROM admins
-             WHERE username = '$username_escaped'
-             LIMIT 1"
-        );
-
-        $admin = $result ? mysqli_fetch_assoc($result) : null;
-
-        if ($admin && password_verify($password, $admin['password'])) {
-            session_regenerate_id(true);
-
-            $_SESSION['admin_id']   = (int) $admin['id'];
-            $_SESSION['admin_name'] = $admin['full_name'];
-            $_SESSION['admin_user'] = $admin['username'];
-
-            redirect('index.php');
-        }
-
-        $error = 'Invalid username or password.';
+    if (empty($username)) {
+        $username_error = "* Input username";
     }
-}
 
-if ($error === '') {
-    $error = (string) get_flash('error');
+    if (empty($password)) {
+        $password_error = "* Input password";
+    }
+
+    if (!isset($username_error) && !isset($password_error)) {
+        $hashed_password = md5($password);
+        $sql = "SELECT * FROM admins WHERE username='$username' AND password='$hashed_password'";
+        $result = mysqli_query($conn, $sql);
+
+        if (mysqli_num_rows($result) > 0) {
+            $row = mysqli_fetch_assoc($result);
+            $_SESSION["admin_id"] = $row["id"];
+            $_SESSION["admin_name"] = $row["full_name"];
+            $_SESSION["admin_user"] = $row["username"];
+            header("location: ../index.php");
+            exit();
+        } else {
+            $login_error = "Invalid username or password";
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -55,44 +42,39 @@ if ($error === '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login | <?= e(APP_SHORT_NAME) ?></title>
+    <title>Login | Medicine Shop</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <link href="<?= url('assets/css/style.css') ?>" rel="stylesheet">
+    <link href="../assets/css/style.css" rel="stylesheet">
 </head>
 <body class="login-page d-flex align-items-center justify-content-center py-5">
 
-<div class="card shadow-sm login-card w-100">
+<div class="card shadow-sm login-card w-100" style="max-width: 420px;">
     <div class="card-body p-4 p-md-5">
         <div class="text-center mb-4">
-            <div class="login-icon mb-2"><i class="bi bi-capsule-pill"></i></div>
-            <h1 class="h4 mb-1"><?= e(APP_SHORT_NAME) ?></h1>
+            <div class="login-icon mb-2"><i class="bi bi-capsule-pill fs-1 text-success"></i></div>
+            <h1 class="h4 mb-1">Medicine Shop</h1>
             <p class="text-muted small mb-0">Admin Billing Panel</p>
         </div>
 
-        <?php if ($error !== ''): ?>
-            <div class="alert alert-danger py-2 small" role="alert"><?= e($error) ?></div>
-        <?php endif; ?>
+        <?php if (isset($login_error)) { ?>
+            <div class="alert alert-danger py-2 small"><?php echo $login_error; ?></div>
+        <?php } ?>
 
-        <form method="post" action="<?= url('auth/login.php') ?>" autocomplete="off">
+        <form method="post" action="">
             <div class="mb-3">
-                <label for="username" class="form-label">Username</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-person"></i></span>
-                    <input type="text" class="form-control" id="username" name="username"
-                           value="<?= e($username) ?>" required autofocus>
-                </div>
+                <label class="form-label">Username</label>
+                <input type="text" class="form-control" name="username" value="<?php echo $username ?? ''; ?>">
+                <span style="color: red; font-size: 13px;"><?php echo $username_error ?? ''; ?></span>
             </div>
 
             <div class="mb-4">
-                <label for="password" class="form-label">Password</label>
-                <div class="input-group">
-                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                    <input type="password" class="form-control" id="password" name="password" required>
-                </div>
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" name="password">
+                <span style="color: red; font-size: 13px;"><?php echo $password_error ?? ''; ?></span>
             </div>
 
-            <button type="submit" class="btn btn-success w-100">
+            <button type="submit" name="login" class="btn btn-success w-100">
                 <i class="bi bi-box-arrow-in-right me-1"></i>Login
             </button>
         </form>
@@ -103,6 +85,5 @@ if ($error === '') {
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
