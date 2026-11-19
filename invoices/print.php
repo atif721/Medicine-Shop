@@ -1,48 +1,42 @@
 <?php
-/**
- * Printable customer invoice.
- */
+session_start();
+include "../config/db.php";
+include "../includes/auth.php";
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/auth.php';
+$id = $_GET["id"];
 
-$id = (int) ($_GET['id'] ?? 0);
-
-$sale_result = mysqli_query(
-    $conn,
-    "SELECT s.*, a.full_name AS cashier_name
-     FROM sales s
-     LEFT JOIN admins a ON a.id = s.sold_by
-     WHERE s.id = $id
-     LIMIT 1"
-);
-
-$sale = $sale_result ? mysqli_fetch_assoc($sale_result) : null;
+$sql = "SELECT s.*, a.full_name AS cashier_name 
+        FROM sales s 
+        LEFT JOIN admins a ON s.sold_by = a.id 
+        WHERE s.id='$id'";
+$result = mysqli_query($conn, $sql);
+$sale = mysqli_fetch_assoc($result);
 
 if (!$sale) {
-    set_flash('error', 'Invoice not found.');
-    redirect('sales/index.php');
+    header("location: ../sales/index.php");
+    exit();
 }
 
-$items = mysqli_query($conn, "SELECT * FROM sale_items WHERE sale_id = $id ORDER BY id ASC");
+$items = mysqli_query($conn, "SELECT * FROM sale_items WHERE sale_id='$id' ORDER BY id ASC");
 
-$pageTitle = 'Invoice ' . $sale['invoice_no'];
-require_once __DIR__ . '/../includes/header.php';
-require_once __DIR__ . '/../includes/sidebar.php';
+$pageTitle = "Invoice " . $sale["invoice_no"];
+include "../includes/header.php";
+include "../includes/sidebar.php";
 ?>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 no-print">
+
+<div class="d-flex justify-content-between align-items-center mb-4 no-print">
     <div>
         <h1 class="page-title h4 mb-1">Invoice</h1>
-        <p class="text-muted small mb-0"><?= e($sale['invoice_no']) ?></p>
+        <p class="text-muted small mb-0"><?php echo $sale["invoice_no"]; ?></p>
     </div>
     <div class="d-flex gap-2">
-        <a href="<?= url('sales/view.php?id=' . (int) $sale['id']) ?>" class="btn btn-outline-secondary btn-sm">
+        <a href="../sales/view.php?id=<?php echo $sale["id"]; ?>" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-receipt me-1"></i>Bill Details
         </a>
-        <a href="<?= url('sales/index.php') ?>" class="btn btn-outline-secondary btn-sm">
+        <a href="../sales/index.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Sales History
         </a>
-        <button type="button" class="btn btn-success btn-sm" data-print>
+        <button type="button" class="btn btn-success btn-sm" onclick="window.print()">
             <i class="bi bi-printer me-1"></i>Print Invoice
         </button>
     </div>
@@ -50,31 +44,34 @@ require_once __DIR__ . '/../includes/sidebar.php';
 
 <div class="card invoice-box mx-auto">
     <div class="card-body p-4 p-md-5">
-        <div class="d-flex flex-wrap justify-content-between gap-3 border-bottom pb-3 mb-4">
+        <div class="d-flex justify-content-between border-bottom pb-3 mb-4">
             <div>
-                <h2 class="h4 mb-1 text-success"><?= e(SHOP_NAME) ?></h2>
-                <div class="small text-muted"><?= e(SHOP_ADDRESS) ?></div>
-                <div class="small text-muted">Phone: <?= e(SHOP_PHONE) ?></div>
+                <h2 class="h4 mb-1 text-success"><?php echo SHOP_NAME; ?></h2>
+                <div class="small text-muted"><?php echo SHOP_ADDRESS; ?></div>
+                <div class="small text-muted">Phone: <?php echo SHOP_PHONE; ?></div>
             </div>
-            <div class="text-md-end">
+            <div class="text-end">
                 <div class="h5 mb-1">INVOICE</div>
-                <div class="small"><strong>No:</strong> <?= e($sale['invoice_no']) ?></div>
-                <div class="small"><strong>Date:</strong> <?= e(date('d M Y, h:i A', strtotime($sale['created_at']))) ?></div>
+                <div class="small"><strong>No:</strong> <?php echo $sale["invoice_no"]; ?></div>
+                <div class="small"><strong>Date:</strong>
+                    <?php echo date("d M Y, h:i A", strtotime($sale["created_at"])); ?></div>
             </div>
         </div>
 
-        <div class="row g-3 mb-4">
+        <div class="row mb-4">
             <div class="col-sm-6">
                 <div class="small text-muted mb-1">Billed To</div>
-                <div class="fw-semibold"><?= $sale['customer_name'] !== null && $sale['customer_name'] !== '' ? e($sale['customer_name']) : 'Walk-in Customer' ?></div>
-                <?php if ($sale['customer_phone'] !== null && $sale['customer_phone'] !== ''): ?>
-                    <div class="small text-muted"><?= e($sale['customer_phone']) ?></div>
-                <?php endif; ?>
+                <div class="fw-semibold">
+                    <?php echo !empty($sale["customer_name"]) ? $sale["customer_name"] : "Walk-in Customer"; ?>
+                </div>
+                <?php if (!empty($sale["customer_phone"])) { ?>
+                    <div class="small text-muted"><?php echo $sale["customer_phone"]; ?></div>
+                <?php } ?>
             </div>
             <div class="col-sm-6 text-sm-end">
                 <div class="small text-muted mb-1">Served By</div>
-                <div><?= e($sale['cashier_name'] ?? 'Admin') ?></div>
-                <div class="small text-muted">Payment: <?= e($sale['payment_method']) ?></div>
+                <div><?php echo $sale["cashier_name"] ?? "Admin"; ?></div>
+                <div class="small text-muted">Payment: <?php echo $sale["payment_method"]; ?></div>
             </div>
         </div>
 
@@ -82,42 +79,41 @@ require_once __DIR__ . '/../includes/sidebar.php';
             <table class="table table-borderless align-middle mb-0">
                 <thead class="border-top border-bottom">
                     <tr>
-                        <th class="text-muted small text-uppercase">SL</th>
-                        <th class="text-muted small text-uppercase">Medicine</th>
-                        <th class="text-center text-muted small text-uppercase">Qty</th>
-                        <th class="text-end text-muted small text-uppercase">Unit Price</th>
-                        <th class="text-end text-muted small text-uppercase">Amount</th>
+                        <th>SL</th>
+                        <th>Medicine</th>
+                        <th class="text-center">Qty</th>
+                        <th class="text-end">Unit Price</th>
+                        <th class="text-end">Amount</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php $sl = 1; while ($item = mysqli_fetch_assoc($items)): ?>
-                    <tr class="border-bottom">
-                        <td><?= $sl++ ?></td>
-                        <td>
-                            <div class="fw-semibold"><?= e($item['product_name']) ?></div>
-                        </td>
-                        <td class="text-center"><?= (int) $item['quantity'] ?></td>
-                        <td class="text-end"><?= e(format_money($item['unit_price'])) ?></td>
-                        <td class="text-end"><?= e(format_money($item['line_total'])) ?></td>
-                    </tr>
-                <?php endwhile; ?>
+                    <?php $sl = 1;
+                    while ($item = mysqli_fetch_assoc($items)) { ?>
+                        <tr class="border-bottom">
+                            <td><?php echo $sl++; ?></td>
+                            <td class="fw-semibold"><?php echo $item["product_name"]; ?></td>
+                            <td class="text-center"><?php echo $item["quantity"]; ?></td>
+                            <td class="text-end">৳ <?php echo number_format($item["unit_price"], 2); ?></td>
+                            <td class="text-end">৳ <?php echo number_format($item["line_total"], 2); ?></td>
+                        </tr>
+                    <?php } ?>
                 </tbody>
             </table>
         </div>
 
         <div class="row justify-content-end mt-3">
-            <div class="col-sm-7 col-md-5">
+            <div class="col-sm-6 col-md-5">
                 <div class="d-flex justify-content-between py-1">
                     <span class="text-muted">Subtotal</span>
-                    <span><?= e(format_money($sale['subtotal'])) ?></span>
+                    <span>৳ <?php echo number_format($sale["subtotal"], 2); ?></span>
                 </div>
                 <div class="d-flex justify-content-between py-1">
                     <span class="text-muted">Discount</span>
-                    <span>- <?= e(format_money($sale['discount'])) ?></span>
+                    <span>- ৳ <?php echo number_format($sale["discount"], 2); ?></span>
                 </div>
                 <div class="d-flex justify-content-between border-top pt-2 mt-1 fs-5 fw-bold">
                     <span>Grand Total</span>
-                    <span><?= e(format_money($sale['grand_total'])) ?></span>
+                    <span>৳ <?php echo number_format($sale["grand_total"], 2); ?></span>
                 </div>
             </div>
         </div>
@@ -127,4 +123,5 @@ require_once __DIR__ . '/../includes/sidebar.php';
         </div>
     </div>
 </div>
-<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
+<?php include "../includes/footer.php"; ?>
