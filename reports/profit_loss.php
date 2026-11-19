@@ -1,101 +1,75 @@
 <?php
-/**
- * Profit / loss report for a selected date range.
- *
- * Profit = (subtotal - discount) - total cost of goods sold
- *        = grand_total - total_cost
- */
+session_start();
+include "../config/db.php";
+include "../includes/auth.php";
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/auth.php';
+$from = $_GET["from"] ?? date("Y-m-01");
+$to = $_GET["to"] ?? date("Y-m-d");
 
-$filtered = isset($_GET['from']) || isset($_GET['to']);
-
-$from = $filtered ? valid_date($_GET['from'] ?? '') : date('Y-m-01');
-$to   = $filtered ? valid_date($_GET['to'] ?? '') : date('Y-m-d');
-
-if ($from !== '' && $to !== '' && $from > $to) {
-    [$from, $to] = [$to, $from];
+$where = "WHERE 1=1";
+if (!empty($from)) {
+    $where .= " AND DATE(created_at) >= '$from'";
+}
+if (!empty($to)) {
+    $where .= " AND DATE(created_at) <= '$to'";
 }
 
-$conditions = [];
+$summary_sql = "SELECT COUNT(*) AS bills, 
+                       SUM(subtotal) AS subtotal, 
+                       SUM(discount) AS discount, 
+                       SUM(grand_total) AS revenue, 
+                       SUM(total_cost) AS cost 
+                FROM sales $where";
+$summary_res = mysqli_query($conn, $summary_sql);
+$summary = mysqli_fetch_assoc($summary_res);
 
-if ($from !== '') {
-    $conditions[] = "DATE(s.created_at) >= '$from'";
-}
+$bills = $summary["bills"] ?? 0;
+$subtotal = $summary["subtotal"] ?? 0;
+$discount = $summary["discount"] ?? 0;
+$revenue = $summary["revenue"] ?? 0;
+$cost = $summary["cost"] ?? 0;
+$profit = $revenue - $cost;
 
-if ($to !== '') {
-    $conditions[] = "DATE(s.created_at) <= '$to'";
-}
+$sales = mysqli_query($conn, "SELECT * FROM sales $where ORDER BY created_at DESC");
 
-$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
-
-$summary_result = mysqli_query(
-    $conn,
-    "SELECT COUNT(*) AS bills,
-            COALESCE(SUM(s.subtotal), 0) AS subtotal,
-            COALESCE(SUM(s.discount), 0) AS discount,
-            COALESCE(SUM(s.grand_total), 0) AS revenue,
-            COALESCE(SUM(s.total_cost), 0) AS cost
-     FROM sales s
-     $where"
-);
-
-$summary = $summary_result
-    ? mysqli_fetch_assoc($summary_result)
-    : ['bills' => 0, 'subtotal' => 0, 'discount' => 0, 'revenue' => 0, 'cost' => 0];
-
-$profit = (float) $summary['revenue'] - (float) $summary['cost'];
-
-$sales = mysqli_query(
-    $conn,
-    "SELECT s.id, s.invoice_no, s.created_at, s.subtotal, s.discount,
-            s.grand_total, s.total_cost,
-            (SELECT COALESCE(SUM(si.quantity), 0) FROM sale_items si WHERE si.sale_id = s.id) AS item_count
-     FROM sales s
-     $where
-     ORDER BY s.created_at DESC"
-);
-
-$pageTitle = 'Profit / Loss Report';
-require_once __DIR__ . '/../includes/header.php';
-require_once __DIR__ . '/../includes/sidebar.php';
+$pageTitle = "Profit / Loss Report";
+include "../includes/header.php";
+include "../includes/sidebar.php";
 ?>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+
+<div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title h4 mb-1">Profit / Loss Report</h1>
         <p class="text-muted small mb-0">
-            <?= $from !== '' ? e(date('d M Y', strtotime($from))) : 'Beginning' ?>
+            <?php echo !empty($from) ? date("d M Y", strtotime($from)) : "Beginning"; ?>
             &ndash;
-            <?= $to !== '' ? e(date('d M Y', strtotime($to))) : 'Today' ?>
+            <?php echo !empty($to) ? date("d M Y", strtotime($to)) : "Today"; ?>
         </p>
     </div>
-    <?php if ($from !== '' || $to !== ''): ?>
-        <a href="<?= url('sales/index.php?from=' . urlencode($from) . '&to=' . urlencode($to)) ?>"
-           class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-receipt me-1"></i>View Bills in Range
-        </a>
-    <?php endif; ?>
+    <a href="../sales/index.php?from=<?php echo $from; ?>&to=<?php echo $to; ?>"
+        class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-receipt me-1"></i>View Bills in Range
+    </a>
 </div>
 
 <div class="card mb-3">
     <div class="card-body py-3">
-        <form method="get" action="<?= url('reports/profit_loss.php') ?>" class="row g-2 align-items-end">
+        <form method="get" action="" class="row g-2 align-items-end">
             <div class="col-sm-4 col-md-3">
-                <label for="from" class="form-label small text-muted mb-1">From Date</label>
-                <input type="date" class="form-control" id="from" name="from" value="<?= e($from) ?>">
+                <label class="form-label small text-muted mb-1">From Date</label>
+                <input type="date" class="form-control" name="from" value="<?php echo $from; ?>">
             </div>
             <div class="col-sm-4 col-md-3">
-                <label for="to" class="form-label small text-muted mb-1">To Date</label>
-                <input type="date" class="form-control" id="to" name="to" value="<?= e($to) ?>">
+                <label class="form-label small text-muted mb-1">To Date</label>
+                <input type="date" class="form-control" name="to" value="<?php echo $to; ?>">
             </div>
-            <div class="col-sm-4 col-md-6 d-flex flex-wrap gap-2">
+            <div class="col-sm-4 col-md-6 d-flex gap-2">
                 <button type="submit" class="btn btn-success">
                     <i class="bi bi-funnel me-1"></i>Show Report
                 </button>
-                <a href="<?= url('reports/profit_loss.php') ?>" class="btn btn-outline-secondary">This Month</a>
-                <a href="<?= url('reports/profit_loss.php?from=' . date('Y-m-d') . '&to=' . date('Y-m-d')) ?>"
-                   class="btn btn-outline-success">Today</a>
+                <a href="profit_loss.php" class="btn btn-outline-secondary">This Month</a>
+                <a href="profit_loss.php?from=<?php echo date("Y-m-d"); ?>&to=<?php echo date("Y-m-d"); ?>"
+                    class="btn btn-outline-success">Today</a>
             </div>
         </form>
     </div>
@@ -106,8 +80,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="card stat-card h-100">
             <div class="card-body">
                 <p class="text-muted small mb-1">Sales Revenue</p>
-                <div class="stat-value"><?= e(format_money($summary['revenue'])) ?></div>
-                <div class="small text-muted"><?= (int) $summary['bills'] ?> bill(s)</div>
+                <div class="stat-value">৳ <?php echo number_format($revenue, 2); ?></div>
+                <div class="small text-muted"><?php echo $bills; ?> bill(s)</div>
             </div>
         </div>
     </div>
@@ -115,8 +89,8 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="card stat-card h-100">
             <div class="card-body">
                 <p class="text-muted small mb-1">Discount Given</p>
-                <div class="stat-value"><?= e(format_money($summary['discount'])) ?></div>
-                <div class="small text-muted">Subtotal <?= e(format_money($summary['subtotal'])) ?></div>
+                <div class="stat-value">৳ <?php echo number_format($discount, 2); ?></div>
+                <div class="small text-muted">Subtotal ৳ <?php echo number_format($subtotal, 2); ?></div>
             </div>
         </div>
     </div>
@@ -124,17 +98,17 @@ require_once __DIR__ . '/../includes/sidebar.php';
         <div class="card stat-card h-100">
             <div class="card-body">
                 <p class="text-muted small mb-1">Cost of Goods Sold</p>
-                <div class="stat-value"><?= e(format_money($summary['cost'])) ?></div>
+                <div class="stat-value">৳ <?php echo number_format($cost, 2); ?></div>
                 <div class="small text-muted">Cost prices saved with each sale</div>
             </div>
         </div>
     </div>
     <div class="col-sm-6 col-xl-3">
-        <div class="card stat-card h-100 border-<?= $profit < 0 ? 'danger' : 'success' ?>">
+        <div class="card stat-card h-100 border-<?php echo $profit < 0 ? 'danger' : 'success'; ?>">
             <div class="card-body">
-                <p class="text-muted small mb-1"><?= $profit < 0 ? 'Net Loss' : 'Net Profit' ?></p>
-                <div class="stat-value <?= $profit < 0 ? 'text-danger' : 'text-success' ?>">
-                    <?= e(format_money(abs($profit))) ?>
+                <p class="text-muted small mb-1"><?php echo $profit < 0 ? "Net Loss" : "Net Profit"; ?></p>
+                <div class="stat-value <?php echo $profit < 0 ? 'text-danger' : 'text-success'; ?>">
+                    ৳ <?php echo number_format(abs($profit), 2); ?>
                 </div>
                 <div class="small text-muted">Revenue &minus; cost of goods</div>
             </div>
@@ -150,7 +124,6 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <tr>
                     <th>Invoice</th>
                     <th>Date</th>
-                    <th class="text-center">Qty</th>
                     <th class="text-end">Subtotal</th>
                     <th class="text-end">Discount</th>
                     <th class="text-end">Grand Total</th>
@@ -159,27 +132,27 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </tr>
             </thead>
             <tbody>
-            <?php if ($sales && mysqli_num_rows($sales) > 0): ?>
-                <?php while ($row = mysqli_fetch_assoc($sales)): ?>
-                    <?php $row_profit = (float) $row['grand_total'] - (float) $row['total_cost']; ?>
+                <?php if (mysqli_num_rows($sales) > 0) { ?>
+                    <?php while ($row = mysqli_fetch_assoc($sales)) {
+                        $row_profit = $row["grand_total"] - $row["total_cost"];
+                        ?>
+                        <tr>
+                            <td class="fw-semibold"><?php echo $row["invoice_no"]; ?></td>
+                            <td class="small"><?php echo date("d M Y", strtotime($row["created_at"])); ?></td>
+                            <td class="text-end">৳ <?php echo number_format($row["subtotal"], 2); ?></td>
+                            <td class="text-end">৳ <?php echo number_format($row["discount"], 2); ?></td>
+                            <td class="text-end">৳ <?php echo number_format($row["grand_total"], 2); ?></td>
+                            <td class="text-end">৳ <?php echo number_format($row["total_cost"], 2); ?></td>
+                            <td class="text-end fw-semibold <?php echo $row_profit < 0 ? 'text-danger' : 'text-success'; ?>">
+                                <?php echo $row_profit < 0 ? "-" : ""; ?>৳ <?php echo number_format(abs($row_profit), 2); ?>
+                            </td>
+                        </tr>
+                    <?php } ?>
+                <?php } else { ?>
                     <tr>
-                        <td class="fw-semibold"><?= e($row['invoice_no']) ?></td>
-                        <td class="small"><?= e(date('d M Y', strtotime($row['created_at']))) ?></td>
-                        <td class="text-center"><?= (int) $row['item_count'] ?></td>
-                        <td class="text-end"><?= e(format_money($row['subtotal'])) ?></td>
-                        <td class="text-end"><?= e(format_money($row['discount'])) ?></td>
-                        <td class="text-end"><?= e(format_money($row['grand_total'])) ?></td>
-                        <td class="text-end"><?= e(format_money($row['total_cost'])) ?></td>
-                        <td class="text-end fw-semibold <?= $row_profit < 0 ? 'text-danger' : 'text-success' ?>">
-                            <?= $row_profit < 0 ? '-' : '' ?><?= e(format_money(abs($row_profit))) ?>
-                        </td>
+                        <td colspan="7" class="text-center text-muted py-4">No sales found in this date range.</td>
                     </tr>
-                <?php endwhile; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="8" class="text-center text-muted py-4">No sales found in this date range.</td>
-                </tr>
-            <?php endif; ?>
+                <?php } ?>
             </tbody>
         </table>
     </div>
@@ -188,6 +161,6 @@ require_once __DIR__ . '/../includes/sidebar.php';
 <div class="alert alert-light border mt-3 small text-muted">
     <i class="bi bi-info-circle me-1"></i>
     Discount is treated as a reduction of revenue: net profit = (subtotal &minus; discount) &minus; cost of goods sold.
-    The cost stored on each sold item is used, so later price changes do not alter old reports.
 </div>
-<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
+<?php include "../includes/footer.php"; ?>
