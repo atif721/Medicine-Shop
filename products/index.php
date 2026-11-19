@@ -1,72 +1,73 @@
 <?php
-/**
- * Product list with name search and category filter.
- */
+session_start();
+include "../config/db.php";
+include "../includes/auth.php";
 
-require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../includes/auth.php';
+$q = $_GET["q"] ?? "";
+$category_id = $_GET["category_id"] ?? "";
 
-$q           = trim($_GET['q'] ?? '');
-$category_id = (int) ($_GET['category_id'] ?? 0);
+$sql = "SELECT p.*, c.name AS category_name 
+        FROM products p 
+        JOIN categories c ON p.category_id = c.id 
+        WHERE 1=1";
 
-$conditions = [];
-
-if ($q !== '') {
-    $like         = mysqli_real_escape_string($conn, $q);
-    $conditions[] = "(p.name LIKE '%$like%' OR p.generic_name LIKE '%$like%')";
+if (!empty($q)) {
+    $sql .= " AND (p.name LIKE '%$q%' OR p.generic_name LIKE '%$q%')";
 }
-
-if ($category_id > 0) {
-    $conditions[] = "p.category_id = $category_id";
+if (!empty($category_id)) {
+    $sql .= " AND p.category_id = '$category_id'";
 }
+$sql .= " ORDER BY p.name ASC";
 
-$where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+$products = mysqli_query($conn, $sql);
+$categories = mysqli_query($conn, "SELECT * FROM categories ORDER BY name ASC");
 
-$products = mysqli_query(
-    $conn,
-    "SELECT p.*, c.name AS category_name
-     FROM products p
-     INNER JOIN categories c ON c.id = p.category_id
-     $where
-     ORDER BY p.name ASC"
-);
+$today = date("Y-m-d");
+$next_60 = date("Y-m-d", strtotime("+60 days"));
 
-$categories = mysqli_query($conn, "SELECT id, name FROM categories ORDER BY name ASC");
-
-$pageTitle = 'Products';
-require_once __DIR__ . '/../includes/header.php';
-require_once __DIR__ . '/../includes/sidebar.php';
+$pageTitle = "Products";
+include "../includes/header.php";
+include "../includes/sidebar.php";
 ?>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+
+<div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="page-title h4 mb-1">Products</h1>
         <p class="text-muted small mb-0">Manage medicines, prices, stock and expiry dates.</p>
     </div>
-    <a href="<?= url('products/create.php') ?>" class="btn btn-success">
+    <a href="create.php" class="btn btn-success">
         <i class="bi bi-plus-lg me-1"></i>Add Product
     </a>
 </div>
 
+<?php if (isset($_SESSION["message"])) { ?>
+    <div class="alert alert-success py-2"><?php echo $_SESSION["message"];
+    unset($_SESSION["message"]); ?></div>
+<?php } ?>
+<?php if (isset($_SESSION["warning"])) { ?>
+    <div class="alert alert-warning py-2"><?php echo $_SESSION["warning"];
+    unset($_SESSION["warning"]); ?></div>
+<?php } ?>
+
 <div class="card mb-3">
     <div class="card-body py-3">
-        <form method="get" action="<?= url('products/index.php') ?>" class="row g-2 align-items-end">
+        <form method="get" action="" class="row g-2 align-items-end">
             <div class="col-md-5">
-                <label for="q" class="form-label small text-muted mb-1">Search by name or generic name</label>
-                <input type="text" class="form-control" id="q" name="q"
-                       value="<?= e($q) ?>" placeholder="e.g. Paracetamol">
+                <label class="form-label small text-muted mb-1">Search by name or generic name</label>
+                <input type="text" class="form-control" name="q" value="<?php echo $q; ?>"
+                    placeholder="e.g. Paracetamol">
             </div>
 
             <div class="col-md-4">
-                <label for="category_id" class="form-label small text-muted mb-1">Category</label>
-                <select class="form-select" id="category_id" name="category_id">
-                    <option value="0">All categories</option>
-                    <?php mysqli_data_seek($categories, 0); ?>
-                    <?php while ($category = mysqli_fetch_assoc($categories)): ?>
-                        <option value="<?= (int) $category['id'] ?>"
-                            <?= $category_id === (int) $category['id'] ? 'selected' : '' ?>>
-                            <?= e($category['name']) ?>
+                <label class="form-label small text-muted mb-1">Category</label>
+                <select class="form-select" name="category_id">
+                    <option value="">All categories</option>
+                    <?php while ($cat = mysqli_fetch_assoc($categories)) { ?>
+                        <option value="<?php echo $cat["id"]; ?>" <?php if ($category_id == $cat["id"])
+                               echo "selected"; ?>>
+                            <?php echo $cat["name"]; ?>
                         </option>
-                    <?php endwhile; ?>
+                    <?php } ?>
                 </select>
             </div>
 
@@ -74,7 +75,7 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 <button type="submit" class="btn btn-success flex-grow-1">
                     <i class="bi bi-search me-1"></i>Filter
                 </button>
-                <a href="<?= url('products/index.php') ?>" class="btn btn-outline-secondary">Reset</a>
+                <a href="index.php" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
     </div>
@@ -96,68 +97,61 @@ require_once __DIR__ . '/../includes/sidebar.php';
                 </tr>
             </thead>
             <tbody>
-            <?php if ($products && mysqli_num_rows($products) > 0): ?>
-                <?php while ($row = mysqli_fetch_assoc($products)): ?>
-                    <?php
-                    $status      = expiry_status($row['expiry_date']);
-                    $low_stock   = (int) $row['stock'] <= (int) $row['reorder_level'];
-                    $mrp_warning = (float) $row['selling_price'] > (float) $row['mrp'];
-                    ?>
-                    <tr>
-                        <td>
-                            <div class="fw-semibold"><?= e($row['name']) ?></div>
-                            <div class="small text-muted">
-                                <?= $row['generic_name'] !== null && $row['generic_name'] !== '' ? e($row['generic_name']) : '&mdash;' ?>
-                            </div>
-                        </td>
-                        <td><?= e($row['category_name']) ?></td>
-                        <td class="text-end"><?= e(format_money($row['cost_price'])) ?></td>
-                        <td class="text-end">
-                            <?= e(format_money($row['selling_price'])) ?>
-                            <?php if ($mrp_warning): ?>
-                                <i class="bi bi-exclamation-triangle text-warning" title="Selling price is higher than MRP"></i>
-                            <?php endif; ?>
-                        </td>
-                        <td class="text-end"><?= e(format_money($row['mrp'])) ?></td>
-                        <td class="text-center">
-                            <span class="badge <?= (int) $row['stock'] === 0 ? 'text-bg-danger' : ($low_stock ? 'text-bg-warning' : 'text-bg-light border') ?>">
-                                <?= (int) $row['stock'] ?> <?= e($row['unit']) ?>
-                            </span>
-                            <div class="small text-muted">Reorder: <?= (int) $row['reorder_level'] ?></div>
-                        </td>
-                        <td>
-                            <?= e(date('d M Y', strtotime($row['expiry_date']))) ?>
-                            <?php if ($status === 'expired'): ?>
-                                <div><span class="badge text-bg-danger">Expired</span></div>
-                            <?php elseif ($status === 'expiring'): ?>
-                                <div><span class="badge text-bg-warning">Expiring soon</span></div>
-                            <?php endif; ?>
-                        </td>
-                        <td class="text-end text-nowrap">
-                            <a href="<?= url('products/edit.php?id=' . (int) $row['id']) ?>"
-                               class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <form method="post" action="<?= url('products/delete.php') ?>" class="d-inline"
-                                  onsubmit="return confirm('Delete this product? Past sales keep their own product details.');">
-                                <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                <?php if (mysqli_num_rows($products) > 0) { ?>
+                    <?php while ($row = mysqli_fetch_assoc($products)) {
+                        $is_expired = ($row["expiry_date"] < $today);
+                        $is_expiring = (!$is_expired && $row["expiry_date"] <= $next_60);
+                        $low_stock = ($row["stock"] <= $row["reorder_level"]);
+                        $mrp_warning = ($row["selling_price"] > $row["mrp"]);
+                        ?>
+                        <tr>
+                            <td>
+                                <div class="fw-semibold"><?php echo $row["name"]; ?></div>
+                                <div class="small text-muted"><?php echo $row["generic_name"] ?: "—"; ?></div>
+                            </td>
+                            <td><?php echo $row["category_name"]; ?></td>
+                            <td class="text-end">৳ <?php echo number_format($row["cost_price"], 2); ?></td>
+                            <td class="text-end">
+                                ৳ <?php echo number_format($row["selling_price"], 2); ?>
+                                <?php if ($mrp_warning) { ?>
+                                    <i class="bi bi-exclamation-triangle text-warning" title="Selling price is higher than MRP"></i>
+                                <?php } ?>
+                            </td>
+                            <td class="text-end">৳ <?php echo number_format($row["mrp"], 2); ?></td>
+                            <td class="text-center">
+                                <span
+                                    class="badge <?php echo $row["stock"] == 0 ? 'text-bg-danger' : ($low_stock ? 'text-bg-warning' : 'text-bg-light border'); ?>">
+                                    <?php echo $row["stock"]; ?>         <?php echo $row["unit"]; ?>
+                                </span>
+                                <div class="small text-muted">Reorder: <?php echo $row["reorder_level"]; ?></div>
+                            </td>
+                            <td>
+                                <?php echo date("d M Y", strtotime($row["expiry_date"])); ?>
+                                <?php if ($is_expired) { ?>
+                                    <div><span class="badge text-bg-danger">Expired</span></div>
+                                <?php } elseif ($is_expiring) { ?>
+                                    <div><span class="badge text-bg-warning">Expiring soon</span></div>
+                                <?php } ?>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <a href="edit.php?id=<?php echo $row["id"]; ?>" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <a href="delete.php?id=<?php echo $row["id"]; ?>" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Delete this product?');">
                                     <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
-                        </td>
+                                </a>
+                            </td>
+                        </tr>
+                    <?php } ?>
+                <?php } else { ?>
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">No products found.</td>
                     </tr>
-                <?php endwhile; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
-                        No products found<?= $q !== '' || $category_id > 0 ? ' for the selected filters' : '' ?>.
-                        <a href="<?= url('products/create.php') ?>">Add a product</a>.
-                    </td>
-                </tr>
-            <?php endif; ?>
+                <?php } ?>
             </tbody>
         </table>
     </div>
 </div>
-<?php require_once __DIR__ . '/../includes/footer.php'; ?>
+
+<?php include "../includes/footer.php"; ?>
